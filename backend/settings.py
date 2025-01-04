@@ -48,6 +48,7 @@ class _UiSettings(BaseSettings):
     chat_description: str = "This chatbot is configured to answer your questions"
     favicon: str = "/favicon.ico"
     show_share_button: bool = True
+    show_chat_history_button: bool = True
 
 
 class _ChatHistorySettings(BaseSettings):
@@ -60,7 +61,7 @@ class _ChatHistorySettings(BaseSettings):
 
     database: str
     account: str
-    account_key: str
+    account_key: Optional[str] = None
     conversations_container: str
     enable_feedback: bool = False
 
@@ -101,7 +102,7 @@ class _AzureOpenAISettings(BaseSettings):
     )
     
     model: str
-    key: str
+    key: Optional[str] = None
     resource: Optional[str] = None
     endpoint: Optional[str] = None
     temperature: float = 0
@@ -174,16 +175,24 @@ class _AzureOpenAISettings(BaseSettings):
                 "type": "deployment_name",
                 "deployment_name": self.embedding_name
             }
-        
-        elif self.embedding_endpoint and self.embedding_key:
-            return {
-                "type": "endpoint",
-                "endpoint": self.embedding_endpoint,
-                "authentication": {
-                    "type": "api_key",
-                    "api_key": self.embedding_key
+        elif self.embedding_endpoint:
+            if self.embedding_key:
+                return {
+                    "type": "endpoint",
+                    "endpoint": self.embedding_endpoint,
+                    "authentication": {
+                        "type": "api_key",
+                        "key": self.embedding_key
+                    }
                 }
-            }
+            else:
+                return {
+                    "type": "endpoint",
+                    "endpoint": self.embedding_endpoint,
+                    "authentication": {
+                        "type": "system_assigned_managed_identity"
+                    }
+                }
         else:   
             return None
     
@@ -195,14 +204,12 @@ class _SearchCommonSettings(BaseSettings):
         extra="ignore",
         env_ignore_empty=True
     )
-    top_k: int = Field(default=5, serialization_alias="top_n_documents")
-    strictness: int = 3
-    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     max_search_queries: Optional[int] = None
     allow_partial_result: bool = False
     include_contexts: Optional[List[str]] = ["citations", "intent"]
     vectorization_dimensions: Optional[int] = None
     role_information: str = Field(
+        default="You are an AI assistant that helps people find information.",
         validation_alias="AZURE_OPENAI_SYSTEM_MESSAGE"
     )
 
@@ -239,6 +246,9 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
         env_ignore_empty=True
     )
     _type: Literal["azure_search"] = PrivateAttr(default="azure_search")
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     service: str = Field(exclude=True)
     endpoint_suffix: str = Field(default="search.windows.net", exclude=True)
     index: str = Field(serialization_alias="index_name")
@@ -266,7 +276,7 @@ class _AzureSearchSettings(BaseSettings, DatasourcePayloadConstructor):
     authentication: Optional[dict] = None
     embedding_dependency: Optional[dict] = None
     fields_mapping: Optional[dict] = None
-    filter: Optional[str] = None
+    filter: Optional[str] = Field(default=None, exclude=True)
     
     @field_validator('content_columns', 'vector_columns', mode="before")
     @classmethod
@@ -351,6 +361,9 @@ class _AzureCosmosDbMongoVcoreSettings(
         env_ignore_empty=True
     )
     _type: Literal["azure_cosmosdb"] = PrivateAttr(default="azure_cosmosdb")
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     query_type: Literal['vector'] = "vector"
     connection_string: str = Field(exclude=True)
     index: str = Field(serialization_alias="index_name")
@@ -417,6 +430,9 @@ class _ElasticsearchSettings(BaseSettings, DatasourcePayloadConstructor):
         env_ignore_empty=True
     )
     _type: Literal["elasticsearch"] = PrivateAttr(default="elasticsearch")
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     endpoint: str
     encoded_api_key: str = Field(exclude=True)
     index: str = Field(serialization_alias="index_name")
@@ -487,6 +503,9 @@ class _PineconeSettings(BaseSettings, DatasourcePayloadConstructor):
         env_ignore_empty=True
     )
     _type: Literal["pinecone"] = PrivateAttr(default="pinecone")
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     environment: str
     api_key: str = Field(exclude=True)
     index_name: str
@@ -554,6 +573,9 @@ class _AzureMLIndexSettings(BaseSettings, DatasourcePayloadConstructor):
         env_ignore_empty=True
     )
     _type: Literal["azure_ml_index"] = PrivateAttr(default="azure_ml_index")
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
     name: str
     version: str
     project_resource_id: str = Field(validation_alias="AZURE_ML_PROJECT_RESOURCE_ID")
@@ -603,24 +625,33 @@ class _AzureSqlServerSettings(BaseSettings, DatasourcePayloadConstructor):
     model_config = SettingsConfigDict(
         env_prefix="AZURE_SQL_SERVER_",
         env_file=DOTENV_PATH,
-        extra="ignore"
+        extra="ignore",
+        env_ignore_empty=True
     )
     _type: Literal["azure_sql_server"] = PrivateAttr(default="azure_sql_server")
     
-    connection_string: str = Field(exclude=True)
-    table_schema: str
+    connection_string: Optional[str] = Field(default=None, exclude=True)
+    table_schema: Optional[str] = None
     schema_max_row: Optional[int] = None
     top_n_results: Optional[int] = None
+    database_server: Optional[str] = None
+    database_name: Optional[str] = None
+    port: Optional[int] = None
     
     # Constructed fields
     authentication: Optional[dict] = None
     
     @model_validator(mode="after")
     def construct_authentication(self) -> Self:
-        self.authentication = {
-            "type": "connection_string",
-            "connection_string": self.connection_string
-        }
+        if self.connection_string:
+            self.authentication = {
+                "type": "connection_string",
+                "connection_string": self.connection_string
+            }
+        elif self.database_server and self.database_name and self.port:
+            self.authentication = {
+                "type": "system_assigned_managed_identity"
+            }
         return self
     
     def construct_payload_configuration(
@@ -636,7 +667,84 @@ class _AzureSqlServerSettings(BaseSettings, DatasourcePayloadConstructor):
             "parameters": parameters
         }
     
+
+class _MongoDbSettings(BaseSettings, DatasourcePayloadConstructor):
+    model_config = SettingsConfigDict(
+        env_prefix="MONGODB_",
+        env_file=DOTENV_PATH,
+        extra="ignore",
+        env_ignore_empty=True
+    )
+    _type: Literal["mongo_db"] = PrivateAttr(default="mongo_db")
     
+    endpoint: str
+    username: str = Field(exclude=True)
+    password: str = Field(exclude=True)
+    database_name: str
+    collection_name: str
+    app_name: str
+    index_name: str
+    query_type: Literal["vector"] = "vector"
+    top_k: int = Field(default=5, serialization_alias="top_n_documents")
+    strictness: int = 3
+    enable_in_domain: bool = Field(default=True, serialization_alias="in_scope")
+    content_columns: Optional[List[str]] = Field(default=None, exclude=True)
+    vector_columns: Optional[List[str]] = Field(default=None, exclude=True)
+    title_column: Optional[str] = Field(default=None, exclude=True)
+    url_column: Optional[str] = Field(default=None, exclude=True)
+    filename_column: Optional[str] = Field(default=None, exclude=True)
+    
+    
+    # Constructed fields
+    authentication: Optional[dict] = None
+    embedding_dependency: Optional[dict] = None
+    fields_mapping: Optional[dict] = None
+    
+    @field_validator('content_columns', 'vector_columns', mode="before")
+    @classmethod
+    def split_columns(cls, comma_separated_string: str) -> List[str]:
+        if isinstance(comma_separated_string, str) and len(comma_separated_string) > 0:
+            return parse_multi_columns(comma_separated_string)
+        
+        return None
+    
+    @model_validator(mode="after")
+    def set_fields_mapping(self) -> Self:
+        self.fields_mapping = {
+            "content_fields": self.content_columns,
+            "title_field": self.title_column,
+            "url_field": self.url_column,
+            "filepath_field": self.filename_column,
+            "vector_fields": self.vector_columns
+        }
+        return self
+    
+    @model_validator(mode="after")
+    def construct_authentication(self) -> Self:
+        self.authentication = {
+            "type": "username_and_password",
+            "username": self.username,
+            "password": self.password
+        }
+        return self
+    
+    def construct_payload_configuration(
+        self,
+        *args,
+        **kwargs
+    ):
+        self.embedding_dependency = \
+            self._settings.azure_openai.extract_embedding_dependency()
+            
+        parameters = self.model_dump(exclude_none=True, by_alias=True)
+        parameters.update(self._settings.search.model_dump(exclude_none=True, by_alias=True))
+        
+        return {
+            "type": self._type,
+            "parameters": parameters
+        }
+        
+        
 class _BaseSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=DOTENV_PATH,
@@ -645,7 +753,7 @@ class _BaseSettings(BaseSettings):
         env_ignore_empty=True
     )
     datasource_type: Optional[str] = None
-    auth_enabled: bool = False
+    auth_enabled: bool = True
     sanitize_answer: bool = False
     use_promptflow: bool = False
 
@@ -707,6 +815,10 @@ class _AppSettings(BaseModel):
             elif self.base_settings.datasource_type == "AzureSqlServer":
                 self.datasource = _AzureSqlServerSettings(settings=self, _env_file=DOTENV_PATH)
                 logging.debug("Using SQL Server")
+            
+            elif self.base_settings.datasource_type == "MongoDB":
+                self.datasource = _MongoDbSettings(settings=self, _env_file=DOTENV_PATH)
+                logging.debug("Using Mongo DB")
                 
             else:
                 self.datasource = None
@@ -714,8 +826,9 @@ class _AppSettings(BaseModel):
                 
             return self
 
-        except ValidationError:
+        except ValidationError as e:
             logging.warning("No datasource configuration found in the environment -- calls will be made to Azure OpenAI without grounding data.")
+            logging.warning(e.errors())
 
 
 app_settings = _AppSettings()
